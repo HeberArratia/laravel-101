@@ -3,9 +3,11 @@ import {
   httpCheat,
   milestones,
   resourceHint,
+  supportPages,
   troubleShoot,
   utilities,
   type Milestone,
+  type SupportPage,
 } from './content/guide'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
@@ -47,7 +49,18 @@ function navHtml(active: string): string {
       <p class="nav-label">Estaciones</p>
       <ul class="nav-list">${links}</ul>
       <div class="nav-extra">
+        <p class="nav-label">Apoyo</p>
         <ul class="nav-list">
+          ${supportPages
+            .map(
+              (page) => `<li>
+            <a class="nav-link ${active === `apoyo-${page.slug}` ? 'is-active' : ''}" href="/apoyo/${page.slug}">
+              <span class="nav-num">+</span>
+              <span class="nav-title">${escapeHtml(page.title)}</span>
+            </a>
+          </li>`,
+            )
+            .join('')}
           <li>
             <a class="nav-link ${active === 'utilidades' ? 'is-active' : ''}" href="/utilidades">
               <span class="nav-num">··</span>
@@ -102,17 +115,42 @@ function renderHome(): string {
       <p class="hero-lead">Guía práctica de Laravel como API REST. Avanza estación por estación: de la primera ruta al CRUD, relaciones y lógica.</p>
       <div class="hero-actions">
         <a class="btn btn-primary" href="/hito/${milestones[0].slug}">Empezar estación 01</a>
-        <a class="btn btn-ghost" href="/utilidades">Hoja de utilidades</a>
+        <a class="btn btn-ghost" href="/apoyo/react">React + API</a>
+        <a class="btn btn-ghost" href="/utilidades">Utilidades</a>
       </div>
     </section>
 
     <section class="station-map">
       <div class="section-head">
         <h2>Mapa de estaciones</h2>
-        <p>13 hitos + utilidades</p>
+        <p>13 hitos + apoyo + utilidades</p>
       </div>
       <ul class="station-list">${stations}</ul>
       <p class="note-strip">${escapeHtml(resourceHint)} El hito ★ Store (POST) es el más importante: si lo logras, el resto encaja.</p>
+    </section>
+
+    <section class="station-map" style="margin-top:2rem;animation-delay:200ms">
+      <div class="section-head">
+        <h2>Apoyo</h2>
+        <p>Cuando la API ya anda</p>
+      </div>
+      <ul class="station-list">
+        ${supportPages
+          .map(
+            (page) => `
+          <li>
+            <a class="station" href="/apoyo/${page.slug}">
+              <span class="station-num">+</span>
+              <div class="station-body">
+                <strong>${escapeHtml(page.title)}</strong>
+                <p>${escapeHtml(page.goal)}</p>
+              </div>
+              <span class="station-meta">${escapeHtml(page.minutes)}</span>
+            </a>
+          </li>`,
+          )
+          .join('')}
+      </ul>
     </section>
   `,
   )
@@ -287,9 +325,84 @@ function renderUtilities(): string {
   )
 }
 
-function parseRoute(pathname: string): { page: 'home' | 'utilidades' | 'hito'; slug?: string } {
+function renderSupport(page: SupportPage): string {
+  const steps = page.steps
+    .map(
+      (step) => `
+      <article class="step">
+        <h3 class="step-title">${escapeHtml(step.title)}</h3>
+        ${step.body ? `<p>${escapeHtml(step.body)}</p>` : ''}
+        ${step.code ? codeBlock(step.code) : ''}
+      </article>`,
+    )
+    .join('')
+
+  const done = page.doneWhen.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
+
+  const tips = page.tips?.length
+    ? `<section class="panel" style="animation-delay:140ms">
+        <h2>Si te trabas</h2>
+        <ul class="tip-list">${page.tips.map((t) => `<li>${escapeHtml(t)}</li>`).join('')}</ul>
+      </section>`
+    : ''
+
+  const trouble = page.trouble?.length
+    ? `<section class="panel" style="animation-delay:180ms">
+        <h2>Errores típicos (React + API)</h2>
+        <div class="trouble">
+          ${page.trouble
+            .map(
+              (item) => `
+            <div class="trouble-item">
+              <strong>${escapeHtml(item.problem)}</strong>
+              <p>${escapeHtml(item.fix)}</p>
+            </div>`,
+            )
+            .join('')}
+        </div>
+      </section>`
+    : ''
+
+  return shell(
+    `apoyo-${page.slug}`,
+    `
+    <header class="milestone-hero">
+      <div class="eyebrow">
+        <span class="pill">Apoyo</span>
+        <span>${escapeHtml(page.minutes)}</span>
+      </div>
+      <h1>${escapeHtml(page.title)}</h1>
+      <p class="goal">${escapeHtml(page.goal)}</p>
+    </header>
+
+    <section class="panel" style="animation-delay:60ms">
+      <h2>Listo cuando…</h2>
+      <ul class="check-list">${done}</ul>
+    </section>
+
+    <section class="panel" style="animation-delay:100ms">
+      <h2>Pasos</h2>
+      <div class="step-list">${steps}</div>
+    </section>
+
+    ${tips}
+    ${trouble}
+
+    <nav class="pager">
+      <a href="/"><span>Inicio</span><strong>Mapa de estaciones</strong></a>
+      <a class="next" href="/utilidades"><span>También</span><strong>Utilidades</strong></a>
+    </nav>
+  `,
+  )
+}
+
+function parseRoute(
+  pathname: string,
+): { page: 'home' | 'utilidades' | 'hito' | 'apoyo'; slug?: string } {
   if (pathname === '/' || pathname === '') return { page: 'home' }
   if (pathname === '/utilidades') return { page: 'utilidades' }
+  const apoyo = pathname.match(/^\/apoyo\/([^/]+)\/?$/)
+  if (apoyo) return { page: 'apoyo', slug: apoyo[1] }
   const match = pathname.match(/^\/hito\/([^/]+)\/?$/)
   if (match) return { page: 'hito', slug: match[1] }
   return { page: 'home' }
@@ -337,6 +450,16 @@ function render() {
   if (route.page === 'utilidades') {
     app.innerHTML = renderUtilities()
     setTitle('Utilidades · HITOS')
+  } else if (route.page === 'apoyo' && route.slug) {
+    const page = supportPages.find((item) => item.slug === route.slug)
+    if (!page) {
+      history.replaceState({}, '', '/')
+      app.innerHTML = renderHome()
+      setTitle('HITOS · Laravel API REST')
+    } else {
+      app.innerHTML = renderSupport(page)
+      setTitle(`${page.title} · HITOS`)
+    }
   } else if (route.page === 'hito' && route.slug) {
     const milestone = milestones.find((m) => m.slug === route.slug)
     if (!milestone) {

@@ -1,6 +1,7 @@
 {
   "rewrites": [
     { "source": "/hito/:path*", "destination": "/index.html" },
+    { "source": "/apoyo/:path*", "destination": "/index.html" },
     { "source": "/utilidades", "destination": "/index.html" }
   ]
 }

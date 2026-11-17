@@ -800,6 +800,232 @@ public function index(Request $request)
   },
 ]
 
+export type SupportPage = {
+  slug: string
+  title: string
+  goal: string
+  minutes: string
+  doneWhen: string[]
+  steps: Step[]
+  tips?: string[]
+  trouble?: { problem: string; fix: string }[]
+}
+
+/** Secciones de apoyo (no son estaciones del CRUD). */
+export const supportPages: SupportPage[] = [
+  {
+    slug: 'react',
+    title: 'React + API REST',
+    goal: 'Consumir tu API Laravel desde una app React (listar y crear), resolviendo CORS y el fetch con JSON.',
+    minutes: '30–45 min',
+    doneWhen: [
+      'Laravel en :8000 y React en :5173 corren a la vez',
+      'Un componente lista GET /api/tareas',
+      'Un formulario hace POST y la lista se actualiza',
+      'Si mandás datos inválidos, ves el 422 en pantalla o en la consola',
+    ],
+    steps: [
+      {
+        title: 'Dos proyectos, dos servidores',
+        body: 'Laravel es el backend (API). React es el frontend. No “se conectan solos”: el navegador llama a URLs de la API con fetch. En local vas a tener dos terminales abiertas.',
+        code: `# Terminal 1 — API
+cd api-tareas
+php artisan serve
+# → http://127.0.0.1:8000
+
+# Terminal 2 — React (Vite)
+cd frontend
+npm run dev
+# → http://localhost:5173`,
+      },
+      {
+        title: 'Crear el frontend (si no lo tenés)',
+        body: 'Proyecto aparte del de Laravel. Vite + React alcanza para el curso.',
+        code: `npm create vite@latest frontend -- --template react
+cd frontend
+npm install
+npm run dev`,
+      },
+      {
+        title: 'URL base de la API',
+        body: 'No hardcodees la URL en diez archivos. En la raíz del frontend creá un .env:',
+        code: `# frontend/.env
+VITE_API_URL=http://127.0.0.1:8000/api`,
+      },
+      {
+        title: 'Habilitar CORS en Laravel',
+        body: 'El navegador bloquea pedidos cross-origin si Laravel no autoriza el origen de React. En config/cors.php (Laravel 11/12 ya trae CORS):',
+        code: `// config/cors.php
+return [
+    'paths' => ['api/*', 'sanctum/csrf-cookie'],
+    'allowed_methods' => ['*'],
+    'allowed_origins' => [
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+    ],
+    'allowed_origins_patterns' => [],
+    'allowed_headers' => ['*'],
+    'exposed_headers' => [],
+    'max_age' => 0,
+    'supports_credentials' => false,
+];
+
+# Después de tocar config:
+php artisan config:clear`,
+      },
+      {
+        title: 'Helper mínimo de fetch',
+        body: 'Un archivo para no repetir headers. Ejemplo frontend/src/api.js:',
+        code: `const API_URL = import.meta.env.VITE_API_URL
+
+export async function api(path, options = {}) {
+  const { headers, ...rest } = options
+  const res = await fetch(\`\${API_URL}\${path}\`, {
+    ...rest,
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      ...(headers || {}),
+    },
+  })
+
+  const text = await res.text()
+  const data = text ? JSON.parse(text) : null
+
+  if (!res.ok) {
+    const error = new Error(data?.message || 'Error de API')
+    error.status = res.status
+    error.data = data
+    throw error
+  }
+
+  return data
+}`,
+      },
+      {
+        title: 'GET — listar tareas en un componente',
+        body: 'useEffect carga al montar. Separá loading / error / datos.',
+        code: `import { useEffect, useState } from 'react'
+import { api } from './api'
+
+export default function ListaTareas() {
+  const [tareas, setTareas] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    api('/tareas')
+      .then(setTareas)
+      .catch((err) => setError(err.message))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <p>Cargando…</p>
+  if (error) return <p>Error: {error}</p>
+
+  return (
+    <ul>
+      {tareas.map((t) => (
+        <li key={t.id}>{t.titulo}</li>
+      ))}
+    </ul>
+  )
+}`,
+      },
+      {
+        title: 'POST — crear desde un form',
+        body: 'El body va como JSON string. Después del 201, volvé a pedir la lista o agregá el ítem al state.',
+        code: `import { useState } from 'react'
+import { api } from './api'
+
+export default function FormTarea({ onCreated }) {
+  const [titulo, setTitulo] = useState('')
+  const [errors, setErrors] = useState(null)
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    setErrors(null)
+    try {
+      const nueva = await api('/tareas', {
+        method: 'POST',
+        body: JSON.stringify({ titulo }),
+      })
+      setTitulo('')
+      onCreated?.(nueva)
+    } catch (err) {
+      // Validación Laravel → 422 con err.data.errors
+      if (err.status === 422) {
+        setErrors(err.data?.errors || { titulo: [err.message] })
+      } else {
+        setErrors({ general: [err.message] })
+      }
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <input
+        value={titulo}
+        onChange={(e) => setTitulo(e.target.value)}
+        placeholder="Título"
+      />
+      {errors?.titulo && <p>{errors.titulo[0]}</p>}
+      <button type="submit">Crear</button>
+    </form>
+  )
+}`,
+      },
+      {
+        title: 'Juntar lista + form',
+        body: 'Al crear, actualizá el state sin recargar la página.',
+        code: `function App() {
+  const [tareas, setTareas] = useState([])
+  // …cargar con useEffect como arriba…
+
+  return (
+    <>
+      <FormTarea onCreated={(nueva) => setTareas((prev) => [...prev, nueva])} />
+      <ListaTareas tareas={tareas} />
+    </>
+  )
+}`,
+      },
+      {
+        title: 'Probar el flujo completo',
+        body: '1) API arriba y con seed. 2) React arriba. 3) Abrí DevTools → Network. 4) Deberías ver GET /api/tareas 200 y, al enviar, POST 201.',
+      },
+    ],
+    tips: [
+      'Si la API anda en Thunder Client pero falla en React, casi siempre es CORS o la URL mal escrita.',
+      'Accept + Content-Type application/json también aplican en fetch, no solo en Thunder Client.',
+      'No mezcles puertos: React no sirve la API; Laravel no renderiza el JSX.',
+      'Auth con Sanctum/cookies es otro nivel. Primero dejá el CRUD público funcionando.',
+    ],
+    trouble: [
+      {
+        problem: 'Access-Control-Allow-Origin / CORS error en consola',
+        fix: 'Agregá http://localhost:5173 a allowed_origins en config/cors.php y corré php artisan config:clear. Reiniciá artisan serve.',
+      },
+      {
+        problem: 'Failed to fetch / NetworkError',
+        fix: '¿php artisan serve está corriendo? ¿VITE_API_URL apunta a http://127.0.0.1:8000/api? Reiniciá npm run dev después de crear el .env.',
+      },
+      {
+        problem: 'GET funciona, POST no',
+        fix: 'Revisá method: "POST", JSON.stringify(body) y Content-Type. Mirá la pestaña Network el status (422 vs 500).',
+      },
+      {
+        problem: 'Veo HTML en vez de JSON',
+        fix: 'Falta header Accept: application/json, o pegaste una URL web (/) en lugar de /api/tareas.',
+      },
+      {
+        problem: 'import.meta.env.VITE_API_URL es undefined',
+        fix: 'La variable debe empezar con VITE_. Reiniciá el servidor de Vite tras crear/editar .env.',
+      },
+    ],
+  },
+]
+
 export type UtilityGroup = {
   title: string
   items: { label: string; command: string }[]
