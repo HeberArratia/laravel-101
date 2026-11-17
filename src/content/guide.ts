@@ -183,13 +183,124 @@ $table->timestamps();`,
       },
     ],
     tips: [
-      'Si cambias columnas después de migrar: migrate:fresh (borra datos) o una nueva migración.',
+      'Si después necesitás agregar, quitar o cambiar columnas → estación 04.',
       'Un solo recurso hasta el hito de relaciones. No te disperses.',
     ],
   },
   {
-    slug: 'index',
+    slug: 'alterar-migracion',
     number: '04',
+    title: 'Alterar la tabla',
+    goal: 'Agregar, quitar o cambiar campos sin romper la base (migración nueva, no editar la vieja).',
+    minutes: '20–30 min',
+    doneWhen: [
+      'Sabés cuándo usar migrate:fresh y cuándo una migración nueva',
+      'Agregaste al menos un campo con una migración de alteración',
+      'Actualizaste $fillable del modelo para el campo nuevo',
+    ],
+    steps: [
+      {
+        title: 'Regla de oro',
+        body: 'Si la migración create_tareas_table ya corrió (aparece en migrate:status), no la edites y vuelvas a esperar que “se actualice sola”. Laravel no re-ejecuta migraciones ya corridas. En el curso, en tu máquina, podés borrar todo con fresh; la forma correcta (y la que usan en equipo) es una migración nueva que altera la tabla.',
+      },
+      {
+        title: 'Opción rápida solo en local: editar + fresh',
+        body: 'Útil al principio del curso si todavía no te importa perder datos. Editás la migración create_…, después:',
+        code: `php artisan migrate:fresh
+# o con datos de prueba:
+php artisan migrate:fresh --seed`,
+      },
+      {
+        title: 'Opción correcta: migración nueva para agregar un campo',
+        body: 'Ejemplo: agregar prioridad a tareas.',
+        code: `php artisan make:migration add_prioridad_to_tareas_table --table=tareas`,
+      },
+      {
+        title: 'up() agrega, down() revierte',
+        body: 'En el archivo nuevo de database/migrations:',
+        code: `public function up(): void
+{
+    Schema::table('tareas', function (Blueprint $table) {
+        $table->string('prioridad')->default('media')->after('descripcion');
+    });
+}
+
+public function down(): void
+{
+    Schema::table('tareas', function (Blueprint $table) {
+        $table->dropColumn('prioridad');
+    });
+}`,
+      },
+      {
+        title: 'Aplicar el cambio',
+        body: '',
+        code: `php artisan migrate
+php artisan migrate:status`,
+      },
+      {
+        title: 'Quitar un campo',
+        body: 'Misma idea: migración nueva, no borrar a mano la columna en la create vieja (si ya corrió).',
+        code: `php artisan make:migration remove_descripcion_from_tareas_table --table=tareas
+
+// up()
+Schema::table('tareas', function (Blueprint $table) {
+    $table->dropColumn('descripcion');
+});
+
+// down() — para poder revertir
+Schema::table('tareas', function (Blueprint $table) {
+    $table->text('descripcion')->nullable();
+});`,
+      },
+      {
+        title: 'Cambiar o renombrar un campo',
+        body: 'Para renombrar:',
+        code: `php artisan make:migration rename_titulo_to_nombre_on_tareas_table --table=tareas
+
+// up()
+Schema::table('tareas', function (Blueprint $table) {
+    $table->renameColumn('titulo', 'nombre');
+});
+
+// Cambiar tipo / nullability (ejemplos):
+$table->string('titulo', 200)->nullable()->change();
+// En Laravel reciente change() suele funcionar sin paquetes extra.
+// Si falla, revisá la docs de tu versión o usá una migración que drop + add (con cuidado: perdés datos de esa columna).`,
+      },
+      {
+        title: 'Actualizar el modelo',
+        body: 'La migración cambia la base; el modelo debe conocer los campos asignables.',
+        code: `protected $fillable = [
+    'titulo',
+    'descripcion',
+    'prioridad', // nuevo
+    'completada',
+];`,
+      },
+    ],
+    tests: [
+      {
+        method: 'CLI',
+        path: 'php artisan migrate:status',
+        expect: 'La migración add_… (o la que creaste) aparece como Ran.',
+      },
+      {
+        method: 'CLI',
+        path: 'php artisan tinker',
+        expect: 'Tarea::first() muestra el campo nuevo (o null/default).',
+      },
+    ],
+    tips: [
+      'Error “nothing to migrate” después de editar un archivo viejo = esa migración ya corrió. Fresh (local) o migración nueva.',
+      'after() no existe en todos los motores igual; en SQLite a veces se ignora. No te bloquees por el orden visual de columnas.',
+      'Siempre pensá el down(): si no podés revertir, migrate:rollback se vuelve un problema.',
+      'Después de agregar campos, actualizá también validaciones y seeders cuando llegues a esos hitos.',
+    ],
+  },
+  {
+    slug: 'index',
+    number: '05',
     title: 'Index — GET colección',
     goal: 'Listar todas las tareas en JSON.',
     minutes: '20 min',
@@ -236,7 +347,7 @@ Route::get('/tareas', [TareaController::class, 'index']);`,
   },
   {
     slug: 'seed',
-    number: '05',
+    number: '06',
     title: 'Seed — datos de prueba',
     goal: 'Tener filas reales en la base para no trabajar a ciegas.',
     minutes: '15–25 min',
@@ -304,7 +415,7 @@ php artisan migrate:fresh --seed`,
   },
   {
     slug: 'store',
-    number: '06',
+    number: '07',
     title: 'Store — POST (hito estrella)',
     goal: 'Crear una tarea enviando JSON desde Thunder Client.',
     minutes: '25–40 min',
@@ -367,7 +478,7 @@ php artisan migrate:fresh --seed`,
   },
   {
     slug: 'validaciones',
-    number: '07',
+    number: '08',
     title: 'Validaciones básicas',
     goal: 'Rechazar datos inválidos con 422 y mensajes claros.',
     minutes: '20–30 min',
@@ -430,7 +541,7 @@ php artisan migrate:fresh --seed`,
   },
   {
     slug: 'show',
-    number: '08',
+    number: '09',
     title: 'Show — GET por id',
     goal: 'Obtener una sola tarea. Practicar parámetros de ruta y 404.',
     minutes: '15–20 min',
@@ -472,7 +583,7 @@ php artisan migrate:fresh --seed`,
   },
   {
     slug: 'update',
-    number: '09',
+    number: '10',
     title: 'Update — PUT/PATCH',
     goal: 'Actualizar campos de una tarea existente.',
     minutes: '20–30 min',
@@ -524,7 +635,7 @@ Route::patch('/tareas/{tarea}', [TareaController::class, 'update']);`,
   },
   {
     slug: 'destroy',
-    number: '10',
+    number: '11',
     title: 'Destroy — DELETE',
     goal: 'Eliminar una tarea y confirmar que ya no aparece en el index.',
     minutes: '10–15 min',
@@ -570,7 +681,7 @@ Route::patch('/tareas/{tarea}', [TareaController::class, 'update']);`,
   },
   {
     slug: 'relaciones',
-    number: '11',
+    number: '12',
     title: 'Relaciones',
     goal: 'Conectar un segundo modelo y devolverlo en el JSON.',
     minutes: '30–45 min',
@@ -629,7 +740,7 @@ return Tarea::with('categoria')->get();`,
   },
   {
     slug: 'logica',
-    number: '12',
+    number: '13',
     title: 'Lógica de negocio',
     goal: 'Agregar una regla real del dominio (filtros, scopes o restricciones).',
     minutes: '30–45 min',
@@ -706,6 +817,15 @@ export const utilities: UtilityGroup[] = [
       { label: 'Estado migraciones', command: 'php artisan migrate:status' },
       { label: 'Fresh (borra datos)', command: 'php artisan migrate:fresh' },
       { label: 'Fresh + seed', command: 'php artisan migrate:fresh --seed' },
+      { label: 'Rollback último batch', command: 'php artisan migrate:rollback' },
+      {
+        label: 'Migración: agregar columna',
+        command: 'php artisan make:migration add_prioridad_to_tareas_table --table=tareas',
+      },
+      {
+        label: 'Migración: quitar columna',
+        command: 'php artisan make:migration remove_descripcion_from_tareas_table --table=tareas',
+      },
       { label: 'Seed', command: 'php artisan db:seed' },
       { label: 'Seed de una clase', command: 'php artisan db:seed --class=TareaSeeder' },
       { label: 'Tinker', command: 'php artisan tinker' },
@@ -783,6 +903,14 @@ export const troubleShoot = [
   {
     problem: 'Table not found',
     fix: 'Corre php artisan migrate (o migrate:fresh --seed).',
+  },
+  {
+    problem: 'Edité la migración create_… y no cambia la tabla',
+    fix: 'Esa migración ya corrió. En local: migrate:fresh. En serio: make:migration nueva que haga Schema::table(...).',
+  },
+  {
+    problem: 'Column already exists / Unknown column',
+    fix: 'Revisá migrate:status. Puede que el campo ya esté, o que falte correr migrate / actualizar $fillable.',
   },
   {
     problem: 'Cambié una ruta y no aparece',

@@ -109,7 +109,7 @@ function renderHome(): string {
     <section class="station-map">
       <div class="section-head">
         <h2>Mapa de estaciones</h2>
-        <p>12 hitos + utilidades</p>
+        <p>13 hitos + utilidades</p>
       </div>
       <ul class="station-list">${stations}</ul>
       <p class="note-strip">${escapeHtml(resourceHint)} El hito ★ Store (POST) es el más importante: si lo logras, el resto encaja.</p>
