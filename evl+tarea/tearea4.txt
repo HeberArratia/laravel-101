@@ -1,0 +1,106 @@
+Tarea 4: API REST de conversión de monedas con Laravel
+Introducción
+Una API REST no solamente permite consultar y almacenar información, sino que también puede recibir datos, ejecutar operaciones, aplicar reglas de negocio y entregar resultados a otras aplicaciones.
+
+En esta tarea desarrollaremos una API que permita convertir pesos chilenos (CLP) a dólares estadounidenses (USD), aplicando validaciones y utilizando correctamente los códigos de estado HTTP.
+
+Objetivo
+Desarrollar una API REST utilizando Laravel que permita realizar conversiones de moneda, aplicando lógica de negocio, validación de datos y manejo de errores.
+
+Requisitos funcionales
+Implementar un endpoint GET /api/exchange-rate que permita consultar la tasa de cambio utilizada.
+
+Implementar un endpoint POST /api/convert que reciba un monto en pesos chilenos y retorne su equivalente en dólares estadounidenses.
+
+Utilizar una tasa de cambio fija de $950 CLP por cada dólar estadounidense, exclusivamente para fines de esta actividad.
+
+Redondear el resultado de la conversión a dos decimales.
+
+Validar correctamente los datos recibidos.
+
+Retornar todas las respuestas en formato JSON.
+
+Ejemplo de solicitud
+POST /api/convert
+
+{
+    "amount": 19000
+}
+Ejemplo de respuesta exitosa (HTTP 200)
+{
+    "success": true,
+    "amount_clp": 19000,
+    "amount_usd": 20,
+    "exchange_rate": 950
+}
+Validaciones obligatorias
+El campo amount es obligatorio.
+
+El monto debe ser numérico.
+
+El monto debe ser mayor a cero.
+
+El monto debe corresponder a un número entero de pesos chilenos.
+
+El monto no puede superar los $100.000.000 CLP.
+
+Cuando una validación no se cumpla, la API deberá retornar un mensaje descriptivo del error y el código de estado HTTP correspondiente.
+
+Ejemplo de respuesta de error (HTTP 422)
+{
+    "success": false,
+    "message": "El monto debe ser mayor a cero."
+}
+Casos de prueba obligatorios
+Monto ingresado	Resultado esperado	Código HTTP
+19000	20 USD	200
+1000	1,05 USD	200
+950	1 USD	200
+0	Error de validación	422
+-5000	Error de validación	422
+"hola"	Error de validación	422
+1500.50	Error de validación	422
+100000001	Error de validación	422
+Campo ausente	Error de validación	422
+Requisitos técnicos
+Utilizar PHP y Laravel.
+
+Definir las rutas en routes/api.php.
+
+Utilizar un controlador para gestionar las solicitudes.
+
+Implementar las validaciones desde el backend.
+
+Utilizar correctamente los métodos y códigos de estado HTTP.
+
+Retornar las respuestas en formato JSON.
+
+Mantener el código correctamente organizado e indentado.
+
+Probar los endpoints utilizando Postman, Thunder Client o una herramienta equivalente.
+
+No es necesario implementar una base de datos, consumir una API externa, desarrollar una interfaz gráfica ni desplegar la aplicación en un servicio de hosting.
+
+Entrega
+La tarea deberá desarrollarse de manera individual.
+
+Subir el código a un repositorio público en GitHub.
+
+Incluir un archivo README.md con las instrucciones necesarias para instalar las dependencias, configurar y ejecutar el proyecto en un entorno local, además de la documentación de los endpoints implementados.
+
+Adjuntar el enlace al repositorio de GitHub en el apartado correspondiente a esta tarea en la plataforma de la asignatura.
+
+Fecha límite de entrega: martes 01 de diciembre de 2026.
+
+No se revisarán modificaciones realizadas en el repositorio con posterioridad a la fecha límite de entrega.
+
+Criterios de evaluación
+Correcta implementación de rutas y controladores: 20%.
+
+Correcta implementación de la lógica de conversión: 20%.
+
+Validación de los datos recibidos: 25%.
+
+Uso correcto de códigos HTTP y respuestas JSON: 20%.
+
+Organización y documentación del código: 15%.

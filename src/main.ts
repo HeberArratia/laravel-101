@@ -112,10 +112,10 @@ function renderHome(): string {
     <section class="hero">
       <div class="hero-kicker">Curso universitario · backend</div>
       <h1 class="hero-brand">HITOS<em>.</em></h1>
-      <p class="hero-lead">Guía práctica de Laravel como API REST. Avanza estación por estación: de la primera ruta al CRUD, relaciones y lógica.</p>
+      <p class="hero-lead">Guía práctica de Laravel como API REST. Avanza estación por estación: de la primera ruta al CRUD, validaciones, lógica y ensayos de entrega.</p>
       <div class="hero-actions">
         <a class="btn btn-primary" href="/hito/${milestones[0].slug}">Empezar estación 01</a>
-        <a class="btn btn-ghost" href="/apoyo/react">React + API</a>
+        <a class="btn btn-ghost" href="/apoyo/entregas">Preparar entregas</a>
         <a class="btn btn-ghost" href="/utilidades">Utilidades</a>
       </div>
     </section>
@@ -123,16 +123,16 @@ function renderHome(): string {
     <section class="station-map">
       <div class="section-head">
         <h2>Mapa de estaciones</h2>
-        <p>13 hitos + apoyo + utilidades</p>
+        <p>${milestones.length} hitos + apoyo + utilidades</p>
       </div>
       <ul class="station-list">${stations}</ul>
-      <p class="note-strip">${escapeHtml(resourceHint)} El hito ★ Store (POST) es el más importante: si lo logras, el resto encaja.</p>
+      <p class="note-strip">${escapeHtml(resourceHint)} El hito ★ Store (POST) es clave. Antes de entregar, pasá por <a href="/apoyo/entregas">Preparar Tarea 4 + EV2</a>.</p>
     </section>
 
     <section class="station-map" style="margin-top:2rem;animation-delay:200ms">
       <div class="section-head">
         <h2>Apoyo</h2>
-        <p>Cuando la API ya anda</p>
+        <p>Entregas, defensa y React</p>
       </div>
       <ul class="station-list">
         ${supportPages
@@ -348,7 +348,7 @@ function renderSupport(page: SupportPage): string {
 
   const trouble = page.trouble?.length
     ? `<section class="panel" style="animation-delay:180ms">
-        <h2>Errores típicos (React + API)</h2>
+        <h2>Errores típicos</h2>
         <div class="trouble">
           ${page.trouble
             .map(

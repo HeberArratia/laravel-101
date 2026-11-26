@@ -537,6 +537,7 @@ php artisan migrate:fresh --seed`,
     tips: [
       'Más adelante puedes mover las reglas a un Form Request (make:request).',
       '422 no es un bug: es la API diciéndote qué corregir.',
+      'La estación 14 suma más reglas (email, min/max, integer) con desafíos.',
     ],
   },
   {
@@ -742,13 +743,18 @@ return Tarea::with('categoria')->get();`,
     slug: 'logica',
     number: '13',
     title: 'Lógica de negocio',
-    goal: 'Agregar una regla real del dominio (filtros, scopes o restricciones).',
-    minutes: '30–45 min',
+    goal: 'Agregar una regla real del dominio (filtros, conflictos, cupos o totales). Crucial para la evaluación.',
+    minutes: '40–60 min',
     doneWhen: [
-      'Hay al menos un filtro por query string o un scope',
-      'O una regla que impide una acción (ej. no borrar completadas)',
+      'Hay al menos una regla que NO es solo CRUD (filtro, conflicto, cupo o cálculo)',
+      'La regla responde con el código HTTP correcto (200, 409 o 422)',
+      'Podés explicar la regla en voz alta en 30 segundos',
     ],
     steps: [
+      {
+        title: 'Qué cuenta como “lógica de negocio”',
+        body: 'CRUD solo guarda y lee. La lógica decide: ¿se puede reservar esta hora? ¿queda cupo? ¿el total del pedido es correcto? En la evaluación te piden al menos una regla propia del dominio.',
+      },
       {
         title: 'Opción A — filtrar pendientes',
         body: 'Scope en el modelo + query en index:',
@@ -785,6 +791,86 @@ public function index(Request $request)
     return response()->noContent();
 }`,
       },
+      {
+        title: 'Opción C — evitar conflictos de horario (reservas)',
+        body: 'Patrón típico de la EV2 (canchas, hotel, peluquería). Antes de crear, buscá si ya existe una reserva que se solapa.',
+        code: `public function store(Request $request)
+{
+    $datos = $request->validate([
+        'cancha_id' => ['required', 'exists:canchas,id'],
+        'fecha' => ['required', 'date'],
+        'hora_inicio' => ['required', 'date_format:H:i'],
+        'hora_fin' => ['required', 'date_format:H:i', 'after:hora_inicio'],
+    ]);
+
+    $conflicto = Reserva::query()
+        ->where('cancha_id', $datos['cancha_id'])
+        ->whereDate('fecha', $datos['fecha'])
+        ->where('hora_inicio', '<', $datos['hora_fin'])
+        ->where('hora_fin', '>', $datos['hora_inicio'])
+        ->exists();
+
+    if ($conflicto) {
+        return response()->json([
+            'message' => 'Ya existe una reserva en ese horario.',
+        ], 409);
+    }
+
+    $reserva = Reserva::create($datos);
+
+    return response()->json($reserva, 201);
+}`,
+      },
+      {
+        title: 'Opción D — controlar cupos',
+        body: 'Si tu dominio es inscripciones o actividades: no aceptes más gente que el máximo.',
+        code: `public function store(Request $request)
+{
+    $datos = $request->validate([
+        'actividad_id' => ['required', 'exists:actividades,id'],
+        'alumno' => ['required', 'string', 'max:120'],
+    ]);
+
+    $actividad = Actividad::findOrFail($datos['actividad_id']);
+    $inscritos = Inscripcion::where('actividad_id', $actividad->id)->count();
+
+    if ($inscritos >= $actividad->cupo_maximo) {
+        return response()->json([
+            'message' => 'No quedan cupos disponibles.',
+        ], 409);
+    }
+
+    $inscripcion = Inscripcion::create($datos);
+
+    return response()->json($inscripcion, 201);
+}`,
+      },
+      {
+        title: 'Opción E — calcular totales',
+        body: 'Pedidos, cine o tienda: el backend calcula; no confíes solo en el número que manda el cliente.',
+        code: `public function store(Request $request)
+{
+    $datos = $request->validate([
+        'items' => ['required', 'array', 'min:1'],
+        'items.*.producto_id' => ['required', 'exists:productos,id'],
+        'items.*.cantidad' => ['required', 'integer', 'min:1'],
+    ]);
+
+    $total = 0;
+    foreach ($datos['items'] as $item) {
+        $producto = Producto::findOrFail($item['producto_id']);
+        $total += $producto->precio * $item['cantidad'];
+    }
+
+    $pedido = Pedido::create([
+        'total' => round($total, 2),
+    ]);
+
+    // …guardar detalles…
+
+    return response()->json($pedido, 201);
+}`,
+      },
     ],
     tests: [
       {
@@ -792,10 +878,425 @@ public function index(Request $request)
         path: 'http://127.0.0.1:8000/api/tareas?pendientes=1',
         expect: 'Solo tareas con completada: false (si elegiste la opción A).',
       },
+      {
+        method: 'POST',
+        path: 'http://127.0.0.1:8000/api/reservas',
+        headers: [
+          'Accept: application/json',
+          'Content-Type: application/json',
+        ],
+        body: `{
+  "cancha_id": 1,
+  "fecha": "2026-12-01",
+  "hora_inicio": "10:00",
+  "hora_fin": "11:00"
+}`,
+        expect: 'Primera vez 201; segunda vez mismo horario → 409 (si elegiste opción C).',
+      },
     ],
     tips: [
-      'Elige una sola regla y hazla bien. Calidad > cantidad.',
-      'Documenta en un comentario o README del repo qué regla implementaste.',
+      'Elige UNA regla alineada a tu proyecto de la EV1 y hazla bien. Calidad > cantidad.',
+      '409 = conflicto de negocio. 422 = datos inválidos. No uses 500 para un “no se puede”.',
+      'Documentá en el README qué regla implementaste y cómo probarla.',
+      'En la defensa te pueden pedir: “agregá una validación para que el precio no sea negativo” o “filtrá por condición”.',
+    ],
+  },
+  {
+    slug: 'validaciones-fuertes',
+    number: '14',
+    title: 'Validaciones fuertes',
+    goal: 'Conocer más reglas de validate() con ejemplos, y después resolver desafíos por tu cuenta.',
+    minutes: '30–45 min',
+    doneWhen: [
+      'Probaste al menos 4 reglas nuevas en un endpoint',
+      'Personalizaste al menos un mensaje de error en español',
+      'Resolviste los 6 desafíos',
+      'Cada fallo responde 422 con Accept: application/json',
+    ],
+    steps: [
+      {
+        title: 'Recordatorio: dónde va validate()',
+        body: 'Siempre al inicio del método, antes de crear o actualizar. Si falla, Laravel corta ahí y responde 422. Si pasa, $datos solo tiene campos válidos.',
+        code: `public function store(Request $request)
+{
+    $datos = $request->validate([
+        'titulo' => ['required', 'string', 'max:150'],
+    ]);
+
+    // acá ya podés confiar en $datos
+}`,
+      },
+      {
+        title: 'Números: numeric, integer, min, max',
+        body: 'numeric acepta 10 o "10". integer exige entero (rechaza 10.5). min / max fijan el rango. gt:0 = mayor que cero (excluye el 0).',
+        code: `$datos = $request->validate([
+    'edad' => ['required', 'integer', 'min:18', 'max:120'],
+    'precio' => ['required', 'numeric', 'min:0'],
+    'cantidad' => ['required', 'integer', 'gt:0'],
+]);
+
+// OK:  { "edad": 25, "precio": 9.90, "cantidad": 3 }
+// 422: { "edad": 15 }           → min:18
+// 422: { "precio": -1 }         → min:0
+// 422: { "cantidad": 0 }        → gt:0
+// 422: { "cantidad": 2.5 }      → integer`,
+      },
+      {
+        title: 'Texto: email, min/max de caracteres, in',
+        body: 'email chequea formato. En strings, min/max cuentan caracteres. in:a,b,c limita a una lista de valores.',
+        code: `$datos = $request->validate([
+    'email' => ['required', 'email'],
+    'nombre' => ['required', 'string', 'min:3', 'max:80'],
+    'rol' => ['required', 'in:admin,editor,viewer'],
+]);
+
+// OK:  { "email": "ana@mail.com", "nombre": "Ana", "rol": "editor" }
+// 422: { "email": "ana@" }      → email
+// 422: { "nombre": "Al" }       → min:3
+// 422: { "rol": "super" }       → in:…`,
+      },
+      {
+        title: 'Booleanos y campos opcionales',
+        body: 'boolean acepta true/false, 1/0, "1"/"0". sometimes = solo validá si el campo viene. nullable = puede ser null.',
+        code: `$datos = $request->validate([
+    'titulo' => ['required', 'string'],
+    'completada' => ['sometimes', 'boolean'],
+    'notas' => ['nullable', 'string', 'max:500'],
+]);
+
+// OK:  { "titulo": "Hola" }                    → completada no vino, ok
+// OK:  { "titulo": "Hola", "completada": true }
+// OK:  { "titulo": "Hola", "notas": null }
+// 422: { "titulo": "Hola", "completada": "sí" } → boolean`,
+      },
+      {
+        title: 'Fechas (cuando tu recurso las use)',
+        body: 'date valida una fecha. after / before comparan con otro campo o con today.',
+        code: `$datos = $request->validate([
+    'fecha_inicio' => ['required', 'date'],
+    'fecha_fin' => ['required', 'date', 'after:fecha_inicio'],
+    'cumple' => ['nullable', 'date', 'before:today'],
+]);
+
+// OK:  fecha_inicio "2026-01-01", fecha_fin "2026-01-10"
+// 422: fecha_fin anterior o igual a fecha_inicio → after:fecha_inicio`,
+      },
+      {
+        title: 'Cómo se ve el 422',
+        body: 'Con el header Accept: application/json, Laravel responde solo. Por defecto los mensajes vienen en inglés.',
+        code: `// Request inválido → HTTP 422
+{
+  "message": "The edad field must be at least 18.",
+  "errors": {
+    "edad": ["The edad field must be at least 18."]
+  }
+}`,
+      },
+      {
+        title: 'Mensajes de retorno personalizados',
+        body: 'El segundo argumento de validate() es un array de mensajes. La clave es campo.regla. Así el 422 habla en español (o con el texto que quieras).',
+        code: `$datos = $request->validate(
+    [
+        'edad' => ['required', 'integer', 'min:18'],
+        'email' => ['required', 'email'],
+        'precio' => ['required', 'numeric', 'min:0'],
+    ],
+    [
+        'edad.required' => 'La edad es obligatoria.',
+        'edad.integer' => 'La edad debe ser un número entero.',
+        'edad.min' => 'Debés ser mayor de 18 años.',
+        'email.required' => 'El email es obligatorio.',
+        'email.email' => 'Ingresá un email válido.',
+        'precio.required' => 'El precio es obligatorio.',
+        'precio.numeric' => 'El precio debe ser numérico.',
+        'precio.min' => 'El precio no puede ser negativo.',
+    ]
+);
+
+// Con edad: 15 → 422
+// errors.edad[0] = "Debés ser mayor de 18 años."`,
+      },
+      {
+        title: 'Desafío 1 — edad mínima',
+        body: 'Validá edad: obligatorio, entero, no menor a 18. Probá 17 (422) y 18 (ok).',
+      },
+      {
+        title: 'Desafío 2 — email válido',
+        body: 'Agregá email obligatorio con formato de correo. Probá "hola" (422) y "hola@ejemplo.com" (ok).',
+      },
+      {
+        title: 'Desafío 3 — precio no negativo + tope',
+        body: 'Validá precio: numérico, no menor a 0, no mayor a 1000000. Casos: -5 → 422, 0 → ok, 1000001 → 422.',
+      },
+      {
+        title: 'Desafío 4 — nombre con largo mínimo',
+        body: 'Validá nombre: string obligatorio de al menos 3 caracteres. "Al" → 422, "Ana" → ok.',
+      },
+      {
+        title: 'Desafío 5 — rol de una lista',
+        body: 'Validá rol: solo puede ser admin, editor o viewer. "super" → 422, "editor" → ok.',
+      },
+      {
+        title: 'Desafío 6 — mensajes en español',
+        body: 'Tomá edad (o precio) y personalizá los mensajes de required y min. Cuando falle, el JSON 422 debe mostrar tu texto, no el inglés por defecto.',
+      },
+    ],
+    tests: [
+      {
+        method: 'POST',
+        path: 'http://127.0.0.1:8000/api/tareas',
+        headers: [
+          'Accept: application/json',
+          'Content-Type: application/json',
+        ],
+        body: `{
+  "titulo": "Probar edad",
+  "edad": 17
+}`,
+        expect: 'Desafío 1 → 422 (menor a 18)',
+      },
+      {
+        method: 'POST',
+        path: 'http://127.0.0.1:8000/api/tareas',
+        headers: [
+          'Accept: application/json',
+          'Content-Type: application/json',
+        ],
+        body: `{
+  "titulo": "Probar email",
+  "email": "hola"
+}`,
+        expect: 'Desafío 2 → 422 (no es email)',
+      },
+      {
+        method: 'POST',
+        path: 'http://127.0.0.1:8000/api/tareas',
+        headers: [
+          'Accept: application/json',
+          'Content-Type: application/json',
+        ],
+        body: `{
+  "titulo": "Probar precio",
+  "precio": -5
+}`,
+        expect: 'Desafío 3 → 422 (min:0)',
+      },
+      {
+        method: 'POST',
+        path: 'http://127.0.0.1:8000/api/tareas',
+        headers: [
+          'Accept: application/json',
+          'Content-Type: application/json',
+        ],
+        body: `{
+  "titulo": "Probar nombre",
+  "nombre": "Al"
+}`,
+        expect: 'Desafío 4 → 422 (min:3 caracteres)',
+      },
+      {
+        method: 'POST',
+        path: 'http://127.0.0.1:8000/api/tareas',
+        headers: [
+          'Accept: application/json',
+          'Content-Type: application/json',
+        ],
+        body: `{
+  "titulo": "Probar rol",
+  "rol": "super"
+}`,
+        expect: 'Desafío 5 → 422 (fuera de in:…)',
+      },
+      {
+        method: 'POST',
+        path: 'http://127.0.0.1:8000/api/tareas',
+        headers: [
+          'Accept: application/json',
+          'Content-Type: application/json',
+        ],
+        body: `{
+  "titulo": "Probar mensaje",
+  "edad": 15
+}`,
+        expect: 'Desafío 6 → 422 con tu mensaje en español (ej. "Debés ser mayor de 18 años.")',
+      },
+    ],
+    tips: [
+      'Podés practicar en el store de tareas: agregá campos solo para validar (aunque no los guardes en la BD).',
+      'Si no los vas a persistir, no hace falta meterlos en $fillable ni en la migración.',
+      'La clave del mensaje es campo.regla → edad.min, email.email, precio.required.',
+      'Sin Accept: application/json el 422 puede venir como HTML.',
+      'min/max en string = largo; en number = valor. No es lo mismo min:3 en nombre que en edad.',
+    ],
+  },
+  {
+    slug: 'colecciones',
+    number: '15',
+    title: 'Colecciones',
+    goal: 'Transformar, filtrar y resumir datos con Collection: filter, map, pluck, sortBy, sum… y un toque de paginate.',
+    minutes: '30–45 min',
+    doneWhen: [
+      'Usaste Collection (o el resultado de Eloquent) con al menos 3 métodos',
+      'Resolviste los 6 desafíos',
+      'Probaste paginate en el index (aunque sea de a 5)',
+    ],
+    steps: [
+      {
+        title: 'Qué es una Collection',
+        body: 'Cuando hacés Tarea::all() o ->get(), Laravel te devuelve una Collection: un array con superpoderes. También podés armar una a mano con collect().',
+        code: `use App\\Models\\Tarea;
+
+$tareas = Tarea::all();          // Illuminate\\Support\\Collection
+$nums = collect([10, 20, 5, 40]);
+
+$nums->sum();    // 75
+$nums->count();  // 4
+$nums->avg();    // 18.75`,
+      },
+      {
+        title: 'Filtrar: filter y where',
+        body: 'filter recibe un callback. where filtra por clave/valor (muy cómodo con modelos).',
+        code: `$tareas = Tarea::all();
+
+// Solo completadas
+$hechas = $tareas->where('completada', true);
+
+// Con callback
+$pendientes = $tareas->filter(function ($t) {
+    return $t->completada === false;
+});
+
+// Atajo (mismo resultado)
+$pendientes = $tareas->where('completada', false);
+
+return response()->json($pendientes->values());
+// ->values() reindexa 0,1,2… (útil en JSON)`,
+      },
+      {
+        title: 'Proyectar: pluck y map',
+        body: 'pluck saca un solo campo. map transforma cada ítem en otra cosa.',
+        code: `$tareas = Tarea::all();
+
+// Solo títulos: ["Estudiar", "Comprar pan", …]
+$titulos = $tareas->pluck('titulo');
+
+// Armar un array custom por cada tarea
+$resumen = $tareas->map(function ($t) {
+    return [
+        'id' => $t->id,
+        'titulo' => strtoupper($t->titulo),
+        'estado' => $t->completada ? 'ok' : 'pendiente',
+    ];
+});
+
+return response()->json($resumen->values());`,
+      },
+      {
+        title: 'Ordenar y resumir',
+        body: 'sortBy / sortByDesc ordenan. sum, avg, count, max, min resumen.',
+        code: `$tareas = Tarea::all();
+
+$porTitulo = $tareas->sortBy('titulo')->values();
+$porIdDesc = $tareas->sortByDesc('id')->values();
+
+// Si tuvieras precio en el modelo:
+// $tareas->sum('precio');
+// $tareas->avg('precio');
+
+$cantidad = $tareas->count();
+$primeraPendiente = $tareas->firstWhere('completada', false);`,
+      },
+      {
+        title: 'Usarlo en el index',
+        body: 'Podés combinar query de Eloquent + Collection. Para filtros simples, a veces alcanza con where en la query; Collection brilla cuando ya tenés los datos en memoria o querés transformar la respuesta.',
+        code: `public function index()
+{
+    $tareas = Tarea::all();
+
+    return response()->json([
+        'total' => $tareas->count(),
+        'pendientes' => $tareas->where('completada', false)->count(),
+        'items' => $tareas->values(),
+    ]);
+}`,
+      },
+      {
+        title: 'Bonus: paginate',
+        body: 'Cuando la lista crece, no devolváis todo. paginate() parte en páginas y arma meta (links, total). Probadlo en el index.',
+        code: `public function index()
+{
+    return Tarea::paginate(5);
+    // GET /api/tareas?page=1
+    // GET /api/tareas?page=2
+}
+
+// JSON típico:
+// { "data": [...], "current_page": 1, "per_page": 5, "total": …, "links": {…} }`,
+      },
+      {
+        title: 'Desafío 1 — solo pendientes',
+        body: 'Devolvé (en tinker o en el index) únicamente las tareas con completada = false. El JSON no debe incluir las completadas.',
+      },
+      {
+        title: 'Desafío 2 — solo títulos',
+        body: 'Obtené un array/lista solo con los títulos (strings), sin id ni el resto de campos.',
+      },
+      {
+        title: 'Desafío 3 — contar pendientes',
+        body: 'Respondé un JSON con la cantidad de pendientes, por ejemplo { "pendientes": N }. Sin listar las tareas.',
+      },
+      {
+        title: 'Desafío 4 — ordenar por título',
+        body: 'Listá todas las tareas ordenadas alfabéticamente por titulo (A→Z).',
+      },
+      {
+        title: 'Desafío 5 — map a resumen',
+        body: 'Transformá cada tarea a { id, titulo, estado } donde estado sea "ok" si completada y "pendiente" si no.',
+      },
+      {
+        title: 'Desafío 6 — paginar de a 5',
+        body: 'En el index, usá paginate(5). Pedí ?page=1 y ?page=2 en Thunder Client y verificá data + current_page.',
+      },
+    ],
+    tests: [
+      {
+        method: 'CLI',
+        path: 'php artisan tinker',
+        expect: 'Desafío 1 — Tarea::all()->where("completada", false) (o filter) sin completadas.',
+      },
+      {
+        method: 'CLI',
+        path: 'php artisan tinker',
+        expect: 'Desafío 2 — pluck("titulo") devuelve solo strings.',
+      },
+      {
+        method: 'GET',
+        path: 'http://127.0.0.1:8000/api/tareas',
+        headers: ['Accept: application/json'],
+        expect: 'Desafío 3 (si lo exponés en index) — JSON con pendientes: N',
+      },
+      {
+        method: 'CLI',
+        path: 'php artisan tinker',
+        expect: 'Desafío 4 — sortBy("titulo")->values()',
+      },
+      {
+        method: 'CLI',
+        path: 'php artisan tinker',
+        expect: 'Desafío 5 — map con id, titulo, estado ok|pendiente',
+      },
+      {
+        method: 'GET',
+        path: 'http://127.0.0.1:8000/api/tareas?page=2',
+        headers: ['Accept: application/json'],
+        expect: 'Desafío 6 — current_page: 2 y como máximo 5 ítems en data',
+      },
+    ],
+    tips: [
+      'Después de filter/where/sortBy, usá ->values() si el JSON se ve raro (saltos de índice).',
+      'Tarea::all() carga todo en memoria. Con muchas filas, filtrá en la query (Tarea::where(...)->get()) o paginate.',
+      'paginate() se usa en el query builder (Tarea::paginate), no sobre una Collection ya cargada.',
+      'Podés practicar todo en tinker antes de tocarlo en el controlador.',
     ],
   },
 ]
@@ -813,6 +1314,161 @@ export type SupportPage = {
 
 /** Secciones de apoyo (no son estaciones del CRUD). */
 export const supportPages: SupportPage[] = [
+  {
+    slug: 'entregas',
+    title: 'Preparar Tarea 4 + EV2',
+    goal: 'Checklist de entrega, mini-ejercicios y preguntas típicas de la defensa oral.',
+    minutes: '20–30 min (lectura) + práctica',
+    doneWhen: [
+      'Sabés qué pide la Tarea 4 vs qué pide la EV2',
+      'Tu README cubre install, .env, migrate (si aplica) y endpoints',
+      'Podés responder 3 preguntas de defensa sin mirar el código',
+    ],
+    steps: [
+      {
+        title: 'Mapa rápido: dos entregas distintas',
+        body: 'Tarea 4 = API de conversión CLP→USD sin base de datos (validación + cálculo + JSON). EV2 = Back-End completo de tu proyecto EV1: ≥3 modelos, relación, CRUD real, validación, lógica de negocio, GitHub y defensa oral.',
+      },
+      {
+        title: 'Checklist Tarea 4',
+        body: 'Marcá uno por uno antes de subir el repo:',
+        code: `[ ] Proyecto Laravel con routes/api.php
+[ ] GET  /api/exchange-rate  → tasa 950
+[ ] POST /api/convert        → amount_clp, amount_usd, exchange_rate
+[ ] Redondeo a 2 decimales (1000 → 1.05)
+[ ] Validaciones: required, numeric, integer, >0, max 100000000
+[ ] Errores → 422 con message descriptivo
+[ ] Casos: 19000, 1000, 950, 0, -5000, "hola", 1500.50, 100000001, ausente
+[ ] README.md con instalación + documentación de endpoints
+[ ] Repo público en GitHub (sin tocar después de la fecha límite)`,
+      },
+      {
+        title: 'Checklist EV2',
+        body: 'Requisitos mínimos de la rúbrica:',
+        code: `[ ] Proyecto Laravel independiente (Composer)
+[ ] BD configurada (SQLite / MySQL / PostgreSQL)
+[ ] ≥ 3 modelos Eloquent propios del dominio
+[ ] ≥ 1 relación (belongsTo / hasMany + FK)
+[ ] Migraciones aplicadas (php artisan migrate)
+[ ] CRUD real de al menos 1 entidad principal
+[ ] Rutas en routes/api.php + controladores
+[ ] GET, POST, PUT|PATCH, DELETE
+[ ] $request->validate() (o Form Request)
+[ ] Códigos HTTP + JSON coherentes
+[ ] ≥ 1 regla de negocio (conflicto, cupo, total, filtro…)
+[ ] Pruebas en Thunder Client / Postman (evidencia)
+[ ] README completo + .env.example (sin vendor/ ni .env)
+[ ] USO_IA.md con declaración honesta
+[ ] Ensayo de presentación 4 min + defensa 6 min`,
+      },
+      {
+        title: 'Mini-ejercicio A — validar un precio',
+        body: 'En cualquier store: agregá que precio sea required, numeric y min:0. Probá -10 (422) y 0 (200/201 si min:0 lo permite). Es la modificación típica que piden en defensa.',
+        code: `'precio' => ['required', 'numeric', 'min:0'],`,
+      },
+      {
+        title: 'Mini-ejercicio B — filtrar por query',
+        body: 'En un index, filtrá por un query string (ej. ?completada=1 o ?disponibles=1). Es otra modificación típica de defensa.',
+        code: `if ($request->has('disponibles')) {
+    $query->where('disponible', $request->boolean('disponibles'));
+}`,
+      },
+      {
+        title: 'Mini-ejercicio C — lógica de conflicto',
+        body: 'Si tu dominio es reservas: intentá crear dos veces el mismo slot. La segunda debe fallar con 409. Si es catálogo/pedidos: calculá un total en el servidor.',
+      },
+      {
+        title: 'Plantilla corta de README',
+        body: 'Adaptá a tu proyecto. Sin esto la rúbrica de documentación baja fuerte.',
+        code: `# Nombre del proyecto
+
+## Descripción
+API REST de …
+
+## Requisitos
+- PHP 8.2+
+- Composer
+- SQLite (o MySQL)
+
+## Instalación
+composer install
+cp .env.example .env
+php artisan key:generate
+php artisan migrate --seed
+php artisan serve
+
+## Endpoints
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| GET | /api/... | ... |
+| POST | /api/... | Body ejemplo: { ... } |
+
+## Lógica de negocio
+Describe la regla (conflicto / cupo / total) y cómo probarla.
+
+## Pruebas
+Thunder Client / Postman — capturas o colección exportada.`,
+      },
+      {
+        title: 'USO_IA.md (obligatorio en EV2)',
+        body: 'No se penaliza el porcentaje. Se evalúa si entendés y podés modificar el código.',
+        code: `# Uso de inteligencia artificial
+
+## Herramientas
+- ChatGPT / Copilot / Cursor: …
+
+## Estimación por carpeta
+| Archivo / carpeta | % IA | Qué hizo |
+|-------------------|------|----------|
+| app/Models/ | 20% | Relaciones |
+| app/Http/Controllers/ | 50% | Borrador de endpoints |
+| Validaciones | 30% | Reglas sugeridas |
+| routes/api.php | 10% | Sintaxis |
+
+## Reflexión
+1. ¿En qué usamos IA?
+2. ¿Qué escribimos nosotros?
+3. ¿Qué errores nos dio la IA?
+4. ¿Cómo verificamos (Thunder Client, logs)?
+5. ¿Qué aprendimos?`,
+      },
+      {
+        title: 'Preguntas típicas de defensa (ensayá en voz alta)',
+        body: 'Modelo Eloquent = clase PHP que representa una tabla y habla con la BD. GET lee / POST crea. make:migration crea el archivo; migrate lo aplica. belongsTo/hasMany unen modelos por FK. validate() corta el request si los datos fallan y responde 422. Si te piden un cambio en vivo: precio >= 0 o un filtro en index — son los dos más comunes.',
+        code: `¿Qué hace un modelo Eloquent?
+¿Diferencia GET vs POST?
+¿Qué hace make:migration y migrate?
+¿Cómo se relacionan modelos (belongsTo / hasMany)?
+¿Cómo validás con $request->validate()?
+¿Qué pasa si llega data inválida?
+Modificá: precio no negativo / filtrá un endpoint`,
+      },
+      {
+        title: 'Orden de estudio recomendado',
+        body: '1) Estaciones 01→13 del CRUD. 2) Estación 14 validaciones fuertes. 3) Estación 15 colecciones (opcional pero útil). 4) Checklist Tarea 4 de esta página (sin mirar soluciones externas: validar + calcular vos). 5) Lógica (13) con la regla de TU dominio EV2. 6) Ensayo oral.',
+      },
+    ],
+    tips: [
+      'La defensa es individual aunque el proyecto sea en pareja: ambos deben poder modificar código.',
+      'Evidencia de pruebas: capturas o una colección de Thunder Client en el repo ayuda.',
+      'No subas vendor/ ni .env con secretos; sí subí .env.example, composer.lock y USO_IA.md.',
+      'La estación 14 practica validaciones; la Tarea 4 la armás vos con el checklist de arriba.',
+    ],
+    trouble: [
+      {
+        problem: 'La tarea pide message y Laravel me devuelve errors: {…}',
+        fix: 'Capturá ValidationException y devolvé success:false + el primer mensaje, o personalizá los messages del validate().',
+      },
+      {
+        problem: 'Mi lógica de negocio es solo un if en el controller y no sé si alcanza',
+        fix: 'Alcanza si es del dominio (conflicto, cupo, total, restricción). Documentala y demostrala con un caso que falle (409/422).',
+      },
+      {
+        problem: 'En defensa me trabo explicando el código',
+        fix: 'Ensayá 3 frases: qué endpoint, qué valida, qué regla de negocio. Abrí Thunder Client y mostrá un 200 y un 422.',
+      },
+    ],
+  },
   {
     slug: 'react',
     title: 'React + API REST',
@@ -1101,10 +1757,11 @@ export const utilities: UtilityGroup[] = [
 ]
 
 export const httpCheat = [
-  { code: '200', meaning: 'OK — lectura o update exitoso' },
+  { code: '200', meaning: 'OK — lectura, update o cálculo exitoso' },
   { code: '201', meaning: 'Created — recurso creado (POST)' },
   { code: '204', meaning: 'No Content — delete exitoso sin body' },
   { code: '404', meaning: 'Not Found — id o ruta inexistente' },
+  { code: '409', meaning: 'Conflict — regla de negocio (horario ocupado, sin cupo)' },
   { code: '422', meaning: 'Validation error — datos inválidos' },
   { code: '500', meaning: 'Error del servidor — mira storage/logs/laravel.log' },
 ]
